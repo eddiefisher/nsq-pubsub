@@ -1,18 +1,12 @@
-[godoc.org]: http://godoc.org/github.com/eddiefisher/nsq_chat "godoc.org"
-
-##Install
+## Install
 
     go get github.com/eddiefisher/nsq_chat
 
-##Docs
-
-On [godoc.org][]
-
-##Author
+## Author
 
 Eddie Fisher [eddi.fisher@gmail.com]
 
-##Copyright & License
+## Copyright & License
 
 Copyright (c) 2018, Eddie Fisher.
 All rights reserved.
