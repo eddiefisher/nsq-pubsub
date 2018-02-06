@@ -1,13 +1,10 @@
-// Copyright 2018, Eddie Fisher. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// main.go [created: Mon,  5 Feb 2018]
+// This is a client exposes a HTTP streaming interface to NSQ channels
 
 package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -19,23 +16,23 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/eddiefisher/nsq_chat/src/app"
-	"github.com/eddiefisher/nsq_chat/src/http_api"
-	"github.com/eddiefisher/nsq_chat/src/version"
 	"github.com/nsqio/go-nsq"
+	"github.com/nsqio/nsq/internal/app"
+	"github.com/nsqio/nsq/internal/http_api"
+	"github.com/nsqio/nsq/internal/version"
 )
 
 var (
-	showVersion      = true              // print version string
-	httpAddress      = "0.0.0.0:8080"    //<addr>:<port> to listen on for HTTP clients
-	maxInFlight      = 100               //max number of messages to allow in flight
-	nsqdTCPAddrs     = app.StringArray{} //nsqd TCP address (may be given multiple times)
-	lookupdHTTPAddrs = app.StringArray{} //lookupd HTTP address (may be given multiple times)
+	showVersion      = flag.Bool("version", false, "print version string")
+	httpAddress      = flag.String("http-address", "0.0.0.0:8080", "<addr>:<port> to listen on for HTTP clients")
+	maxInFlight      = flag.Int("max-in-flight", 100, "max number of messages to allow in flight")
+	nsqdTCPAddrs     = app.StringArray{}
+	lookupdHTTPAddrs = app.StringArray{}
 )
 
 func init() {
-	nsqdTCPAddrs = app.StringArray{"0.0.0.0:4150"}
-	lookupdHTTPAddrs = app.StringArray{"0.0.0.0:4160"}
+	flag.Var(&nsqdTCPAddrs, "nsqd-tcp-address", "nsqd TCP address (may be given multiple times)")
+	flag.Var(&lookupdHTTPAddrs, "lookupd-http-address", "lookupd HTTP address (may be given multiple times)")
 }
 
 type StreamServer struct {
@@ -149,7 +146,7 @@ func (s *StreamServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	cfg := nsq.NewConfig()
 	cfg.UserAgent = fmt.Sprintf("nsq_pubsub/%s go-nsq/%s", version.Binary, nsq.VERSION)
-	cfg.MaxInFlight = maxInFlight
+	cfg.MaxInFlight = *maxInFlight
 	r, err := nsq.NewConsumer(topicName, channelName, cfg)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -223,12 +220,34 @@ func (sr *StreamReader) HandleMessage(message *nsq.Message) error {
 }
 
 func main() {
-	httpAddr := "127.0.0.1:3883"
-	httpListener, err := net.Listen("tcp", httpAddr)
-	if err != nil {
-		log.Fatalf("FATAL: listen (%s) failed - %s", httpAddr, err.Error())
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("nsq_pubsub v%s\n", version.Binary)
+		return
 	}
-	log.Printf("listening on %s", httpAddr)
+
+	if *maxInFlight <= 0 {
+		log.Fatalf("--max-in-flight must be > 0")
+	}
+
+	if len(nsqdTCPAddrs) == 0 && len(lookupdHTTPAddrs) == 0 {
+		log.Fatalf("--nsqd-tcp-address or --lookupd-http-address required.")
+	}
+
+	if len(nsqdTCPAddrs) != 0 && len(lookupdHTTPAddrs) != 0 {
+		log.Fatalf("use --nsqd-tcp-address or --lookupd-http-address not both")
+	}
+
+	httpAddr, err := net.ResolveTCPAddr("tcp", *httpAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+	httpListener, err := net.Listen("tcp", httpAddr.String())
+	if err != nil {
+		log.Fatalf("FATAL: listen (%s) failed - %s", httpAddr.String(), err.Error())
+	}
+	log.Printf("listening on %s", httpAddr.String())
 
 	streamServer = &StreamServer{}
 	server := &http.Server{Handler: streamServer}
